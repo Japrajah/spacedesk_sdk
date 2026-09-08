@@ -1,0 +1,60 @@
+cmake_minimum_required(VERSION 3.24)
+
+# Also build these consumers independently against an already installed SDK:
+# cmake -S samples -B build-samples -DSPACEDESK_SDK_ROOT=<absolute path to dist>
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(spacedesk_samples LANGUAGES C CXX)
+  if(NOT WIN32)
+    message(FATAL_ERROR "These samples use the Windows spacedesk SDK.")
+  endif()
+  set(SD_SAMPLES_STANDALONE TRUE)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  list(APPEND CMAKE_VS_GLOBALS "VcpkgEnabled=false" "VcpkgEnableManifest=false" "VcpkgApplocalDeps=false")
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../include/spacedesk_sdk.h")
+    set(SD_DEFAULT_SDK "${CMAKE_CURRENT_SOURCE_DIR}/..")
+  elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../dist/include/spacedesk_sdk.h")
+    set(SD_DEFAULT_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../../dist")
+  else()
+    set(SD_DEFAULT_SDK "${CMAKE_CURRENT_SOURCE_DIR}/../dist")
+  endif()
+  set(SPACEDESK_SDK_ROOT "${SD_DEFAULT_SDK}" CACHE PATH "Installed SDK with bin/include/lib directories")
+  foreach(SD_REQUIRED bin/spacedesk_sdk.dll lib/spacedesk_sdk.lib include/spacedesk_sdk.h)
+    if(NOT EXISTS "${SPACEDESK_SDK_ROOT}/${SD_REQUIRED}")
+      message(FATAL_ERROR "Missing ${SPACEDESK_SDK_ROOT}/${SD_REQUIRED}; set SPACEDESK_SDK_ROOT to the installed SDK.")
+    endif()
+  endforeach()
+  add_library(spacedesk_sdk SHARED IMPORTED GLOBAL)
+  set_target_properties(spacedesk_sdk PROPERTIES
+    IMPORTED_LOCATION "${SPACEDESK_SDK_ROOT}/bin/spacedesk_sdk.dll"
+    IMPORTED_IMPLIB "${SPACEDESK_SDK_ROOT}/lib/spacedesk_sdk.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${SPACEDESK_SDK_ROOT}/include")
+endif()
+
+function(sd_sample target)
+  target_link_libraries(${target} PRIVATE spacedesk_sdk)
+  set_target_properties(${target} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  target_compile_definitions(${target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /utf-8)
+  endif()
+  if(SD_SAMPLES_STANDALONE)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:spacedesk_sdk>" "$<TARGET_FILE_DIR:${target}>/spacedesk_sdk.dll")
+  endif()
+  install(TARGETS ${target} RUNTIME DESTINATION bin)
+endfunction()
+
+add_subdirectory(viewer)
+add_subdirectory(probe)
+add_subdirectory(settings)
+add_subdirectory(MouseMove)
+add_subdirectory(Touch)
+add_subdirectory(ReciveImgPacket)
+add_subdirectory(SendKeyboard)
+add_subdirectory(ReciveAudio)
+
+if(SD_SAMPLES_STANDALONE)
+  install(FILES "${SPACEDESK_SDK_ROOT}/bin/spacedesk_sdk.dll" DESTINATION bin)
+  install(DIRECTORY "${SPACEDESK_SDK_ROOT}/licenses/" DESTINATION licenses OPTIONAL)
+endif()
